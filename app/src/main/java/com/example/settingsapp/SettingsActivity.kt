@@ -13,6 +13,10 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.example.settingsapp.databinding.ActivitySettingsBinding
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 // Funcion de extensión
@@ -28,10 +32,34 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private lateinit var binding: ActivitySettingsBinding
+    private var firstTime:Boolean = true
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivitySettingsBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        // Nos colgamos de getSettings en una corrutina (hilo secudario)
+        // para que nos avise de algun cambio
+        CoroutineScope(Dispatchers.IO).launch {
+            // Ejecuta esto solo cuando firstTime es true
+            getSettings().filter { firstTime } .collect{ settingsModel ->
+                if (settingsModel != null){
+                    // se usa runOnUi... porque no se puede alterar interfaz desde hilo secundario
+                    runOnUiThread {
+                        // datos SettingsModel
+                        binding.switchVibration.isChecked = settingsModel.vibration
+                        binding.switchDarkMode.isChecked = settingsModel.darkMode
+                        binding.switchBluetooth.isChecked = settingsModel.bluetooth
+                        binding.rsVolume.setValues(settingsModel.volume.toFloat())
+                        firstTime = !firstTime
+                    }
+
+                }
+            }
+        }
+
+
+
         initUI()
     }
 
@@ -71,6 +99,18 @@ class SettingsActivity : AppCompatActivity() {
     private suspend fun saveOption(key: String, value: Boolean){
         datastore.edit { preference ->
             preference[booleanPreferencesKey(key)] = value
+        }
+    }
+
+    // Se usa una dataclass para poder devolver las configuraciones usando FLOW
+    private fun getSettings(): Flow<SettingsModel> {
+        return datastore.data.map { preference ->
+            SettingsModel(
+                volume = preference[intPreferencesKey(VOLUME_LVL)] ?: 50,
+                bluetooth = preference[booleanPreferencesKey(KEY_BLUETOOTH)] ?: false,
+                darkMode = preference[booleanPreferencesKey(KEY_DARKMODE)] ?: false,
+                vibration = preference[booleanPreferencesKey(KEY_VIBRATION)] ?: false
+            )
         }
     }
 }
